@@ -1,10 +1,9 @@
 import type { AWS } from "@serverless/typescript";
-import { process, query } from "@functions/index";
+import { process, query } from "./src/functions/index";
 
 const serverlessConfiguration: AWS = {
   service: "rag-api-service",
   frameworkVersion: "4",
-  plugins: ["serverless-offline", "serverless-esbuild"],
   provider: {
     name: "aws",
     runtime: "nodejs22.x", // TODO: Ensure Bedrock SDKs and OpenSearch clients work well
@@ -104,12 +103,13 @@ const serverlessConfiguration: AWS = {
           Description: "Vector search collection for RAG",
           // StandbyReplicas: "DISABLED", // For dev/test to save costs
         },
+        DependsOn: ["RAGCollectionEncryptionPolicy"],
       },
       // Encryption policy for the collection (uses AWS owned key by default if not specified)
       RAGCollectionEncryptionPolicy: {
         Type: "AWS::OpenSearchServerless::SecurityPolicy",
         Properties: {
-          Name: "${self:service}-rag-sp-encryption-${sls:stage}",
+          Name: "${self:service}-enc-${sls:stage}",
           Type: "encryption",
           Policy: {
             "Fn::Sub":
@@ -121,11 +121,11 @@ const serverlessConfiguration: AWS = {
       RAGCollectionNetworkPolicy: {
         Type: "AWS::OpenSearchServerless::SecurityPolicy",
         Properties: {
-          Name: "${self:service}-rag-sp-network-${sls:stage}",
+          Name: "${self:service}-network-${sls:stage}",
           Type: "network",
           Policy: {
             "Fn::Sub":
-              '[{"Rules":[{"ResourceType":"collection","Resource":["collection/${self:service}-rag-vectors-${sls:stage}"]},{"ResourceType":"dashboard","Resource":["collection/${self:service}-rag-vectors-${sls:stage}"]}],"AllowFromPublic":true}]}',
+              '[{"Rules":[{"ResourceType":"collection","Resource":["collection/${self:service}-rag-vectors-${sls:stage}"]},{"ResourceType":"dashboard","Resource":["collection/${self:service}-rag-vectors-${sls:stage}"]}],"AllowFromPublic":true}]',
           },
         },
       },
@@ -133,23 +133,22 @@ const serverlessConfiguration: AWS = {
       RAGCollectionDataAccessPolicy: {
         Type: "AWS::OpenSearchServerless::AccessPolicy",
         Properties: {
-          Name: "${self:service}-rag-data-access-${sls:stage}",
+          Name: "${self:service}-data-${sls:stage}",
           Type: "data",
           Description: "Data access policy for RAG Lambda functions",
           Policy: {
             "Fn::Sub": [
-              // JSON policy as a string
               `[
                 {
                   "Rules": [
                     {
                       "ResourceType": "collection",
-                      "Resource": ["collection/RAGVectorCollection"],
+                      "Resource": ["collection/\${CollectionName}"],
                       "Permission": ["aoss:DescribeCollectionItems"]
                     },
                     {
                       "ResourceType": "index",
-                      "Resource": ["index/RAGVectorCollection/*"],
+                      "Resource": ["index/\${CollectionName}/*"],
                       "Permission": [
                         "aoss:CreateIndex",
                         "aoss:DeleteIndex",
@@ -167,9 +166,7 @@ const serverlessConfiguration: AWS = {
                 }
               ]`,
               {
-                CollectionName: {
-                  "Fn::GetAtt": ["RAGVectorCollection", "Name"],
-                }, // Use Fn::GetAtt to get the dynamically generated name
+                CollectionName: "${self:service}-rag-vectors-${sls:stage}",
                 ProcessDocumentRoleArn: {
                   "Fn::GetAtt": ["ProcessDocumentRole", "Arn"],
                 },

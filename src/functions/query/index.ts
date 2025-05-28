@@ -3,7 +3,7 @@ import { handlerPath } from "@libs/handler-resolver";
 export default {
   handler: `${handlerPath(__dirname)}/handler.main`,
   role: "QueryRAGRole",
-  timeout: 60,
+  timeout: 30,
   memorySize: 256,
   events: [
     {
